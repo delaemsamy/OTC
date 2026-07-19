@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Демо-опционы — BTC/USDT</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Inter:wght@400;500;600&display=swap');
+
+:root{
+  --bg:#14161C;
+  --panel:#1B1E27;
+  --panel-2:#232733;
+  --line:#2E3340;
+  --text:#E8E9EC;
+  --text-dim:#8A8F9C;
+  --up:#3DA5D9;
+  --down:#E0763C;
+  --gain:#4FBE7A;
+  --loss:#E0574F;
+  --gold:#D9B24C;
+  --mono:'JetBrains Mono', monospace;
+  --body:'Inter', sans-serif;
+}
+*{box-sizing:border-box; margin:0; padding:0;}
+body{background:var(--bg); color:var(--text); font-family:var(--body); min-height:100vh;}
+.wrap{max-width:900px; margin:0 auto; padding:28px 20px 60px;}
+
+.demo-flag{
+  background:var(--gold); color:#1A1508; font-family:var(--mono); font-weight:700;
+  font-size:12px; text-align:center; padding:8px; letter-spacing:0.04em;
+}
+
+header{display:flex; justify-content:space-between; align-items:center; margin-top:24px; margin-bottom:20px;}
+.eyebrow{font-family:var(--mono); font-size:11px; color:var(--text-dim); letter-spacing:0.1em; text-transform:uppercase;}
+h1{font-family:var(--mono); font-size:22px; font-weight:800; margin-top:4px;}
+.balance-box{text-align:right;}
+.balance-label{font-family:var(--mono); font-size:11px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.06em;}
+.balance-val{font-family:var(--mono); font-size:26px; font-weight:800;}
+.reset-btn{
+  margin-top:6px; background:none; border:1px solid var(--line); color:var(--text-dim);
+  font-family:var(--mono); font-size:11px; padding:5px 10px; border-radius:3px; cursor:pointer;
+}
+.reset-btn:hover{border-color:var(--loss); color:var(--loss);}
+
+.price-panel{
+  background:var(--panel); border:1px solid var(--line); border-radius:4px; padding:24px;
+}
+.price-row{display:flex; justify-content:space-between; align-items:baseline; gap:10px; flex-wrap:wrap;}
+.src-badge{
+  font-family:var(--mono); font-size:10.5px; padding:3px 8px; border-radius:10px;
+  letter-spacing:0.04em; text-transform:uppercase; align-self:center;
+}
+.src-badge.live{background:rgba(79,190,122,0.15); color:var(--gain); border:1px solid rgba(79,190,122,0.4);}
+.src-badge.otc{background:rgba(217,178,76,0.15); color:var(--gold); border:1px solid rgba(217,178,76,0.4);}
+
+.instrument-bar{
+  display:flex; gap:8px; overflow-x:auto; padding-bottom:14px; margin-bottom:6px;
+}
+.instrument-btn{
+  flex-shrink:0; background:var(--panel); border:1px solid var(--line); color:var(--text-dim);
+  font-family:var(--mono); font-size:12px; padding:9px 14px; border-radius:20px; cursor:pointer;
+  white-space:nowrap; transition:all .15s;
+}
+.instrument-btn.active{background:rgba(61,165,217,0.12); border-color:var(--up); color:var(--text);}
+.instrument-btn:disabled{opacity:0.4; cursor:default;}
+.instrument-btn .tag{font-size:9px; opacity:0.7; margin-left:4px;}
+.price-now{font-family:var(--mono); font-size:clamp(32px,6vw,46px); font-weight:800;}
+.price-delta{font-family:var(--mono); font-size:14px;}
+.price-delta.up{color:var(--gain);}
+.price-delta.down{color:var(--loss);}
+.chart-wrap{margin-top:18px;}
+svg{width:100%; height:180px; display:block;}
+
+.trade-panel{
+  display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:20px;
+}
+.stake-box{
+  grid-column:1 / -1; background:var(--panel); border:1px solid var(--line); border-radius:4px;
+  padding:18px 20px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;
+}
+.stake-box label{font-family:var(--mono); font-size:11.5px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.05em;}
+.stake-box input{
+  background:var(--panel-2); border:1px solid var(--line); color:var(--text);
+  font-family:var(--mono); font-size:16px; padding:9px 12px; border-radius:3px; width:140px;
+}
+.payout-note{font-family:var(--mono); font-size:12px; color:var(--text-dim);}
+
+.btn-up, .btn-down{
+  border:none; border-radius:4px; padding:26px; font-family:var(--mono); font-weight:800;
+  font-size:16px; cursor:pointer; color:#fff; display:flex; flex-direction:column; align-items:center; gap:6px;
+  transition:transform .1s, opacity .15s;
+}
+.btn-up{background:var(--up);}
+.btn-down{background:var(--down);}
+.btn-up:hover, .btn-down:hover{opacity:0.9;}
+.btn-up:active, .btn-down:active{transform:scale(0.98);}
+.btn-up:disabled, .btn-down:disabled{opacity:0.35; cursor:default;}
+.btn-arrow{font-size:22px;}
+
+.active-trade{
+  margin-top:20px; background:var(--panel); border:1px solid var(--gold); border-radius:4px;
+  padding:18px 20px; display:none; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;
+}
+.active-trade.show{display:flex;}
+.active-trade .info{font-family:var(--mono); font-size:13px; color:var(--text-dim);}
+.active-trade .timer{font-family:var(--mono); font-size:22px; font-weight:800; color:var(--gold);}
+
+.history{margin-top:32px;}
+.history h3{font-family:var(--mono); font-size:12px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.06em; padding-bottom:10px; border-bottom:1px solid var(--line);}
+.history-row{
+  display:grid; grid-template-columns:110px 90px 1fr 90px 90px 90px; gap:10px; align-items:center;
+  padding:11px 0; border-bottom:1px solid var(--line); font-family:var(--mono); font-size:13px;
+}
+.history-row.win .result{color:var(--gain);}
+.history-row.lose .result{color:var(--loss);}
+.history-empty{padding:20px 0; color:var(--text-dim); font-family:var(--mono); font-size:13px; text-align:center;}
+</style>
+</head>
+<body>
+
+<div class="demo-flag">⚠ ДЕМО-СЧЁТ — ВИРТУАЛЬНЫЙ БАЛАНС. BTC — РЕАЛЬНАЯ ЦЕНА, OTC-ПАРЫ — СИМУЛЯЦИЯ. РЕАЛЬНЫЕ ДЕНЬГИ НЕ ЗАДЕЙСТВОВАНЫ</div>
+
+<div class="wrap">
+  <header>
+    <div>
+      <div class="eyebrow">Демо-опционы</div>
+      <h1 id="pairTitle">BTC / USDT</h1>
+    </div>
+    <div class="balance-box">
+      <div class="balance-label">Виртуальный баланс</div>
+      <div class="balance-val" id="balanceVal">$10,000.00</div>
+      <button class="reset-btn" id="resetBtn">Сбросить баланс</button>
+    </div>
+  </header>
+
+  <div class="instrument-bar" id="instrumentBar"></div>
+
+  <div class="price-panel">
+    <div class="price-row">
+      <div class="price-now" id="priceNow">—</div>
+      <div class="price-delta" id="priceDelta"></div>
+      <span class="src-badge" id="srcBadge"></span>
+    </div>
+    <div class="chart-wrap">
+      <svg id="chart" viewBox="0 0 800 180" preserveAspectRatio="none"></svg>
+    </div>
+  </div>
+
+  <div class="trade-panel">
+    <div class="stake-box">
+      <div>
+        <label for="stakeInput">Ставка, $</label><br>
+        <input type="number" id="stakeInput" value="100" min="1" step="1">
+      </div>
+      <div>
+        <label>Срок опциона</label><br>
+        <span class="payout-note" style="font-size:15px; color:var(--text);">60 секунд</span>
+      </div>
+      <div class="payout-note">Выплата при угадывании: <b style="color:var(--gold);">+85%</b> от ставки</div>
+    </div>
+
+    <button class="btn-up" id="btnUp"><span class="btn-arrow">▲</span>ВВЕРХ</button>
+    <button class="btn-down" id="btnDown"><span class="btn-arrow">▼</span>ВНИЗ</button>
+  </div>
+
+  <div class="active-trade" id="activeTrade">
+    <div class="info" id="activeInfo">—</div>
+    <div class="timer" id="activeTimer">60</div>
+  </div>
+
+  <div class="history">
+    <h3>История сделок</h3>
+    <div id="historyList"><div class="history-empty">Сделок пока не было</div></div>
+  </div>
+</div>
+
+<script>
+const OPTION_DURATION = 60; // секунд
+const PAYOUT = 0.85; // 85% профита при выигрыше
+const STORAGE_BALANCE = 'demoOptionsBalance';
+const STORAGE_HISTORY = 'demoOptionsHistory';
+
+// ---------- Инструменты ----------
+// BTC/USDT — реальная живая цена с публичного API Binance.
+// Остальные 10 — OTC-пары. У настоящих брокеров OTC-котировки на форекс
+// тоже не берутся с биржи (рынок форекс по выходным не торгуется) —
+// они генерируются алгоритмически. Здесь это сделано честно и открыто:
+// случайное блуждание вокруг реалистичного курса, с пометкой "OTC · симулировано".
+const INSTRUMENTS = [
+  { id: 'BTCUSDT',    label: 'BTC/USDT',    type: 'live', decimals: 2 },
+  { id: 'EURUSD_OTC', label: 'EUR/USD OTC', type: 'otc', base: 1.0723, vol: 0.00035, decimals: 5 },
+  { id: 'GBPUSD_OTC', label: 'GBP/USD OTC', type: 'otc', base: 1.2685, vol: 0.00045, decimals: 5 },
+  { id: 'USDJPY_OTC', label: 'USD/JPY OTC', type: 'otc', base: 149.52, vol: 0.045,   decimals: 3 },
+  { id: 'AUDUSD_OTC', label: 'AUD/USD OTC', type: 'otc', base: 0.6521, vol: 0.00035, decimals: 5 },
+  { id: 'USDCHF_OTC', label: 'USD/CHF OTC', type: 'otc', base: 0.8843, vol: 0.00030, decimals: 5 },
+  { id: 'EURJPY_OTC', label: 'EUR/JPY OTC', type: 'otc', base: 160.35, vol: 0.055,   decimals: 3 },
+  { id: 'GBPJPY_OTC', label: 'GBP/JPY OTC', type: 'otc', base: 189.72, vol: 0.065,   decimals: 3 },
+  { id: 'USDCAD_OTC', label: 'USD/CAD OTC', type: 'otc', base: 1.3712, vol: 0.00035, decimals: 5 },
+  { id: 'NZDUSD_OTC', label: 'NZD/USD OTC', type: 'otc', base: 0.6015, vol: 0.00035, decimals: 5 },
+  { id: 'EURGBP_OTC', label: 'EUR/GBP OTC', type: 'otc', base: 0.8452, vol: 0.00025, decimals: 5 },
+];
+
+let currentId = INSTRUMENTS[0].id;
+// состояние по каждому инструменту хранится отдельно, чтобы при переключении
+// история графика и текущая цена не терялись
+const state = {};
+INSTRUMENTS.forEach(ins => {
+  state[ins.id] = { priceHistory: [], currentPrice: ins.type === 'otc' ? ins.base : null, prevPrice: null };
+});
+
+let balance = parseFloat(localStorage.getItem(STORAGE_BALANCE)) || 10000;
+let history = JSON.parse(localStorage.getItem(STORAGE_HISTORY) || '[]');
+let activeTrade = null; // {instrumentId, direction, stake, startPrice, startTime, endTime}
+
+const balanceValEl = document.getElementById('balanceVal');
+const priceNowEl = document.getElementById('priceNow');
+const priceDeltaEl = document.getElementById('priceDelta');
+const srcBadgeEl = document.getElementById('srcBadge');
+const pairTitleEl = document.getElementById('pairTitle');
+const chartEl = document.getElementById('chart');
+const btnUp = document.getElementById('btnUp');
+const btnDown = document.getElementById('btnDown');
+const stakeInput = document.getElementById('stakeInput');
+const activeTradeEl = document.getElementById('activeTrade');
+const activeInfoEl = document.getElementById('activeInfo');
+const activeTimerEl = document.getElementById('activeTimer');
+const historyListEl = document.getElementById('historyList');
+const resetBtn = document.getElementById('resetBtn');
+const instrumentBarEl = document.getElementById('instrumentBar');
+
+function getInstrument(id){ return INSTRUMENTS.find(i => i.id === id); }
+
+function fmtPrice(price, ins){
+  return price.toLocaleString('en-US', { minimumFractionDigits: ins.decimals, maximumFractionDigits: ins.decimals });
+}
+function fmtUsd(n){
+  return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function saveState(){
+  localStorage.setItem(STORAGE_BALANCE, balance);
+  localStorage.setItem(STORAGE_HISTORY, JSON.stringify(history.slice(-50)));
+}
+
+function renderBalance(){
+  balanceValEl.textContent = fmtUsd(balance);
+}
+
+function renderInstrumentBar(){
+  instrumentBarEl.innerHTML = INSTRUMENTS.map(ins => `
+    <button class="instrument-btn ${ins.id === currentId ? 'active' : ''}" data-id="${ins.id}" ${activeTrade ? 'disabled' : ''}>
+      ${ins.label}<span class="tag">${ins.type === 'live' ? 'LIVE' : 'OTC'}</span>
+    </button>
+  `).join('');
+  instrumentBarEl.querySelectorAll('.instrument-btn').forEach(btn => {
+    btn.addEventListener('click', () => switchInstrument(btn.dataset.id));
+  });
+}
+
+function switchInstrument(id){
+  if(activeTrade) return; // не даём переключаться посреди сделки
+  currentId = id;
+  const ins = getInstrument(id);
+  pairTitleEl.textContent = ins.label;
+  srcBadgeEl.textContent = ins.type === 'live' ? 'Live · Binance' : 'OTC · симулировано';
+  srcBadgeEl.className = 'src-badge ' + ins.type;
+  renderInstrumentBar();
+  renderCurrentPrice();
+  renderChart();
+}
+
+function renderCurrentPrice(){
+  const ins = getInstrument(currentId);
+  const s = state[currentId];
+  if(s.currentPrice === null){
+    priceNowEl.textContent = '—';
+    return;
+  }
+  priceNowEl.textContent = fmtPrice(s.currentPrice, ins);
+  if(s.prevPrice !== null){
+    const delta = s.currentPrice - s.prevPrice;
+    priceDeltaEl.textContent = (delta >= 0 ? '▲ ' : '▼ ') + Math.abs(delta).toFixed(ins.decimals);
+    priceDeltaEl.className = 'price-delta ' + (delta >= 0 ? 'up' : 'down');
+  }
+}
+
+function renderHistory(){
+  if(!history.length){
+    historyListEl.innerHTML = '<div class="history-empty">Сделок пока не было</div>';
+    return;
+  }
+  historyListEl.innerHTML = history.slice().reverse().map(t => `
+    <div class="history-row ${t.win ? 'win' : 'lose'}">
+      <div>${t.instrumentLabel}</div>
+      <div>${t.direction === 'up' ? '▲ Вверх' : '▼ Вниз'}</div>
+      <div>${new Date(t.time).toLocaleTimeString('ru-RU')}</div>
+      <div>${fmtUsd(t.stake)}</div>
+      <div class="result">${t.win ? '+' + fmtUsd(t.stake * PAYOUT) : '−' + fmtUsd(t.stake)}</div>
+      <div>${fmtUsd(t.balanceAfter)}</div>
+    </div>
+  `).join('');
+}
+
+function renderChart(){
+  const ins = getInstrument(currentId);
+  const s = state[currentId];
+  if(s.priceHistory.length < 2){ chartEl.innerHTML = ''; return; }
+  const values = s.priceHistory.map(p => p.price);
+  const min = Math.min(...values), max = Math.max(...values);
+  const range = (max - min) || 1;
+  const w = 800, h = 180, pad = 8;
+  const points = s.priceHistory.map((p, i) => {
+    const x = (i / (s.priceHistory.length - 1 || 1)) * (w - pad*2) + pad;
+    const y = h - pad - ((p.price - min) / range) * (h - pad*2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+
+  let markerSvg = '';
+  if(activeTrade && activeTrade.instrumentId === currentId){
+    const startIdx = s.priceHistory.findIndex(p => p.time >= activeTrade.startTime);
+    if(startIdx >= 0){
+      const x = (startIdx / (s.priceHistory.length - 1 || 1)) * (w - pad*2) + pad;
+      markerSvg = `<line x1="${x}" y1="0" x2="${x}" y2="${h}" stroke="#D9B24C" stroke-width="1" stroke-dasharray="4 4"/>`;
+    }
+  }
+
+  const lineColor = ins.type === 'live' ? '#3DA5D9' : '#D9B24C';
+  chartEl.innerHTML = `${markerSvg}<polyline points="${points}" fill="none" stroke="${lineColor}" stroke-width="2"/>`;
+}
+
+// ---------- Обновление цен: живой BTC с Binance + симуляция OTC-пар ----------
+async function pollLivePrice(){
+  try{
+    const res = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT');
+    const data = await res.json();
+    pushPrice('BTCUSDT', parseFloat(data.price));
+  }catch(err){
+    if(currentId === 'BTCUSDT') priceNowEl.textContent = 'ошибка загрузки цены';
+  }
+}
+
+function stepOtcPrice(ins, prevPrice){
+  const meanReversion = (ins.base - prevPrice) * 0.01; // лёгкий возврат к базовому курсу
+  const noise = (Math.random() - 0.5) * ins.vol;
+  return Math.max(0.00001, prevPrice + meanReversion + noise);
+}
+
+function tickOtcPrices(){
+  INSTRUMENTS.filter(i => i.type === 'otc').forEach(ins => {
+    const s = state[ins.id];
+    const prev = s.currentPrice ?? ins.base;
+    pushPrice(ins.id, stepOtcPrice(ins, prev));
+  });
+}
+
+function pushPrice(id, price){
+  const s = state[id];
+  s.prevPrice = s.currentPrice;
+  s.currentPrice = price;
+  s.priceHistory.push({ time: Date.now(), price });
+  if(s.priceHistory.length > 120) s.priceHistory.shift();
+
+  if(id === currentId){
+    renderCurrentPrice();
+    renderChart();
+  }
+  if(activeTrade && activeTrade.instrumentId === id){
+    checkActiveTrade();
+  }
+}
+
+setInterval(() => { pollLivePrice(); tickOtcPrices(); }, 2000);
+pollLivePrice();
+tickOtcPrices();
+
+// ---------- Открытие сделки ----------
+function openTrade(direction){
+  if(activeTrade) return;
+  const s = state[currentId];
+  if(s.currentPrice === null) return;
+  const ins = getInstrument(currentId);
+  const stake = parseFloat(stakeInput.value);
+  if(!stake || stake <= 0 || stake > balance){
+    alert('Проверьте сумму ставки — она должна быть больше 0 и не больше вашего баланса.');
+    return;
+  }
+
+  activeTrade = {
+    instrumentId: currentId,
+    instrumentLabel: ins.label,
+    direction,
+    stake,
+    startPrice: s.currentPrice,
+    startTime: Date.now(),
+    endTime: Date.now() + OPTION_DURATION * 1000,
+  };
+
+  balance -= stake;
+  renderBalance();
+  saveState();
+
+  btnUp.disabled = true;
+  btnDown.disabled = true;
+  renderInstrumentBar();
+  activeTradeEl.classList.add('show');
+  activeInfoEl.textContent = `${ins.label} · ${direction === 'up' ? '▲ Вверх' : '▼ Вниз'} · вход по ${fmtPrice(activeTrade.startPrice, ins)} · ставка ${fmtUsd(stake)}`;
+}
+
+function checkActiveTrade(){
+  if(!activeTrade) return;
+  const remaining = Math.max(0, Math.ceil((activeTrade.endTime - Date.now()) / 1000));
+  activeTimerEl.textContent = remaining;
+
+  if(Date.now() >= activeTrade.endTime){
+    settleTrade();
+  }
+}
+
+function settleTrade(){
+  const finalPrice = state[activeTrade.instrumentId].currentPrice;
+  const win = activeTrade.direction === 'up'
+    ? finalPrice > activeTrade.startPrice
+    : finalPrice < activeTrade.startPrice;
+
+  if(win){
+    balance += activeTrade.stake + activeTrade.stake * PAYOUT;
+  }
+  // при проигрыше ставка уже списана при открытии сделки
+
+  history.push({
+    instrumentLabel: activeTrade.instrumentLabel,
+    direction: activeTrade.direction,
+    stake: activeTrade.stake,
+    win,
+    time: Date.now(),
+    balanceAfter: balance,
+  });
+
+  renderBalance();
+  renderHistory();
+  saveState();
+
+  activeTrade = null;
+  btnUp.disabled = false;
+  btnDown.disabled = false;
+  renderInstrumentBar();
+  activeTradeEl.classList.remove('show');
+}
+
+btnUp.addEventListener('click', () => openTrade('up'));
+btnDown.addEventListener('click', () => openTrade('down'));
+
+resetBtn.addEventListener('click', () => {
+  if(!confirm('Сбросить виртуальный баланс до $10,000 и очистить историю сделок?')) return;
+  balance = 10000;
+  history = [];
+  saveState();
+  renderBalance();
+  renderHistory();
+});
+
+renderInstrumentBar();
+srcBadgeEl.textContent = 'Live · Binance';
+srcBadgeEl.className = 'src-badge live';
+renderBalance();
+renderHistory();
+</script>
+</body>
+</html>
