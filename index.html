@@ -81,7 +81,7 @@ input{font-family:inherit;}
 .main{flex:1; display:flex; overflow:hidden;}
 .chart-area{flex:1; position:relative; display:flex; flex-direction:column; min-width:0;}
 .chart-svg-wrap{flex:1; position:relative;}
-svg#chart{width:100%; height:100%; display:block;}
+canvas#chart{width:100%; height:100%; display:block;}
 
 .ohlc-readout{
   position:absolute; left:14px; bottom:14px; font-family:var(--mono); font-size:11.5px;
@@ -99,10 +99,6 @@ svg#chart{width:100%; height:100%; display:block;}
 .zoom-btn:hover{border-color:var(--accent); color:var(--accent);}
 .zoom-btn:disabled{opacity:0.3; cursor:default;}
 .zoom-btn:disabled:hover{border-color:var(--border); color:var(--text);}
-
-/* Плавность: только "живая" (текущая) свеча и линия цены анимируются переходом
-   при каждом обновлении атрибутов — закрытые свечи статичны и не анимируются */
-.live-el{ transition: y 0.35s ease-out, height 0.35s ease-out, x 0.35s ease-out, width 0.35s ease-out, fill 0.3s ease-out; }
 
 
 /* ---------- SIDEBAR ---------- */
@@ -202,7 +198,7 @@ svg#chart{width:100%; height:100%; display:block;}
 <div class="main">
   <div class="chart-area">
     <div class="chart-svg-wrap" id="chartWrap">
-      <svg id="chart" viewBox="0 0 1000 560" preserveAspectRatio="none"></svg>
+      <canvas id="chart"></canvas>
       <div class="zoom-controls">
         <button class="zoom-btn" id="zoomIn" title="Крупнее свечи">+</button>
         <button class="zoom-btn" id="zoomOut" title="Мельче свечи">−</button>
@@ -369,6 +365,47 @@ function updateCandle(id, time, price){
   return isNew;
 }
 
+// ---------- CANVAS: подготовка и ресайз ----------
+const ctx = els.chart.getContext('2d');
+let canvasCssW = 0, canvasCssH = 0;
+
+function resizeCanvas(){
+  const rect = els.chart.parentElement.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvasCssW = rect.width;
+  canvasCssH = rect.height;
+  els.chart.width = Math.round(rect.width * dpr);
+  els.chart.height = Math.round(rect.height * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawFrame();
+}
+new ResizeObserver(() => resizeCanvas()).observe(els.chart.parentElement);
+
+// ---------- Анимация: плавно ведём "живую" свечу и линию цены к новому значению ----------
+let animId = null;
+function animateLiveTo(instrumentId, toCandle, toPrice, duration){
+  const s = state[instrumentId];
+  const from = s.displayLive ? { ...s.displayLive } : { ...toCandle };
+  const fromPrice = s.displayPrice ?? toPrice;
+  const start = performance.now();
+  if(animId) cancelAnimationFrame(animId);
+
+  function step(now){
+    const t = Math.min(1, (now - start) / duration);
+    const ease = 1 - Math.pow(1 - t, 2); // ease-out, как в вашем файле
+    s.displayLive = {
+      open: toCandle.open,
+      high: from.high + (toCandle.high - from.high) * ease,
+      low: from.low + (toCandle.low - from.low) * ease,
+      close: from.close + (toCandle.close - from.close) * ease,
+    };
+    s.displayPrice = fromPrice + (toPrice - fromPrice) * ease;
+    if(instrumentId === currentId) drawFrame();
+    if(t < 1) animId = requestAnimationFrame(step);
+  }
+  animId = requestAnimationFrame(step);
+}
+
 function renderOhlc(){
   const ins = getInstrument(currentId);
   const s = state[currentId];
@@ -379,130 +416,87 @@ function renderOhlc(){
     `Максимум: <b>${fmtPrice(last.high, ins)}</b> · Минимум: <b>${fmtPrice(last.low, ins)}</b>`;
 }
 
-function rebuildChart(){
+// Полная перерисовка кадра — дёшево на canvas, вызывается на каждый rAF-тик анимации
+function drawFrame(){
+  if(!canvasCssW || !canvasCssH) return;
   const s = state[currentId];
-  const candles = s.candles.slice(-visibleCount);
-  if(!candles.length){ els.chart.innerHTML = ''; return; }
+  const rawCandles = s.candles.slice(-visibleCount);
+  if(!rawCandles.length){ ctx.clearRect(0, 0, canvasCssW, canvasCssH); return; }
 
-  const w = 1000, h = 560, padX = 10, padY = 30;
+  // подменяем последнюю свечу и цену на интерполированные значения анимации
+  const candles = rawCandles.slice();
+  if(s.displayLive) candles[candles.length - 1] = { ...candles[candles.length - 1], ...s.displayLive };
+  const displayPrice = s.displayPrice ?? s.currentPrice;
+
+  const w = canvasCssW, h = canvasCssH, padX = 10, padY = 24;
   const highs = candles.map(c => c.high), lows = candles.map(c => c.low);
   const rawMin = Math.min(...lows), rawMax = Math.max(...highs);
 
-  // Границы шкалы пересчитываем только когда цена реально выходит за текущий
-  // диапазон — так шкала не "прыгает" на каждом мелком колебании цены.
+  // Границы шкалы стабильны — пересчитываются только когда цена выходит за них
   if(s.rangeMin === null || rawMin < s.rangeMin || rawMax > s.rangeMax){
     const rawRange = (rawMax - rawMin) || (rawMax * 0.002) || 0.0001;
     const pad = rawRange * 0.18;
     s.rangeMin = rawMin - pad;
     s.rangeMax = rawMax + pad;
   }
-
-  const min = s.rangeMin, max = s.rangeMax;
-  const range = (max - min) || 1;
+  const min = s.rangeMin, max = s.rangeMax, range = (max - min) || 1;
 
   const slot = (w - padX * 2) / candles.length;
   const bodyWidth = Math.max(2, slot * 0.6);
-  const wickWidth = 1.5;
+  const wickWidth = Math.max(1, slot * 0.12);
   const yFor = price => padY + (h - padY * 2) - ((price - min) / range) * (h - padY * 2);
 
-  let svg = '';
+  ctx.clearRect(0, 0, w, h);
 
   // пунктирные линии — точки входа в открытые сделки
+  ctx.save();
+  ctx.strokeStyle = '#D9B24C';
+  ctx.setLineDash([4, 4]);
+  ctx.lineWidth = 1;
   openTrades.filter(t => t.instrumentId === currentId).forEach(t => {
     const bucket = Math.floor(t.startTime / CANDLE_INTERVAL) * CANDLE_INTERVAL;
-    const idx = candles.findIndex(c => c.time === bucket);
+    const idx = rawCandles.findIndex(c => c.time === bucket);
     if(idx >= 0){
       const x = padX + slot * idx + slot / 2;
-      svg += `<line x1="${x.toFixed(1)}" y1="0" x2="${x.toFixed(1)}" y2="${h}" stroke="#D9B24C" stroke-width="1" stroke-dasharray="4 4"/>`;
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
     }
   });
+  ctx.restore();
 
-  // все свечи, кроме последней — статичные, без анимации (они уже закрыты и не меняются)
-  candles.slice(0, -1).forEach((c, i) => {
-    svg += candleSvg(c, padX + slot * i + slot / 2, bodyWidth, wickWidth, yFor, '', '');
+  // свечи
+  candles.forEach((c, i) => {
+    const xCenter = padX + slot * i + slot / 2;
+    const up = c.close >= c.open;
+    ctx.fillStyle = up ? '#17C787' : '#F1495B';
+    const yHigh = yFor(c.high), yLow = yFor(c.low);
+    const yOpen = yFor(c.open), yClose = yFor(c.close);
+    const bodyTop = Math.min(yOpen, yClose);
+    const bodyHeight = Math.max(1.5, Math.abs(yClose - yOpen));
+    ctx.fillRect(xCenter - wickWidth/2, yHigh, wickWidth, Math.max(1, yLow - yHigh));
+    ctx.fillRect(xCenter - bodyWidth/2, bodyTop, bodyWidth, bodyHeight);
   });
 
-  // последняя свеча — "живая", помечена id/классом для точечных плавных обновлений
-  const lastIdx = candles.length - 1;
-  const lastCandle = candles[lastIdx];
-  svg += candleSvg(lastCandle, padX + slot * lastIdx + slot / 2, bodyWidth, wickWidth, yFor, 'liveWick', 'liveBody');
-
-  // линия текущей цены — тоже "живая", рисуем тонким прямоугольником (у line нет CSS-transition на x1/y1)
-  if(s.currentPrice !== null){
-    const y = yFor(s.currentPrice);
-    svg += `<rect id="priceLine" class="live-el" x="0" y="${(y-0.5).toFixed(1)}" width="${w}" height="1" fill="#7C8AA3" opacity="0.5"/>`;
+  // линия текущей цены
+  if(displayPrice !== null && displayPrice !== undefined){
+    const y = yFor(displayPrice);
+    ctx.save();
+    ctx.strokeStyle = '#7C8AA3';
+    ctx.globalAlpha = 0.5;
+    ctx.setLineDash([3, 5]);
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+    ctx.restore();
   }
-
-  els.chart.innerHTML = svg;
 }
 
-function candleSvg(c, xCenter, bodyWidth, wickWidth, yFor, wickId, bodyId){
-  const up = c.close >= c.open;
-  const color = up ? '#17C787' : '#F1495B';
-  const yHigh = yFor(c.high), yLow = yFor(c.low);
-  const yOpen = yFor(c.open), yClose = yFor(c.close);
-  const bodyTop = Math.min(yOpen, yClose);
-  const bodyHeight = Math.max(1.5, Math.abs(yClose - yOpen));
-  const wickIdAttr = wickId ? ` id="${wickId}" class="live-el"` : '';
-  const bodyIdAttr = bodyId ? ` id="${bodyId}" class="live-el"` : '';
-  return (
-    `<rect${wickIdAttr} x="${(xCenter - wickWidth/2).toFixed(1)}" y="${yHigh.toFixed(1)}" width="${wickWidth}" height="${Math.max(1, yLow - yHigh).toFixed(1)}" fill="${color}"/>` +
-    `<rect${bodyIdAttr} x="${(xCenter - bodyWidth/2).toFixed(1)}" y="${bodyTop.toFixed(1)}" width="${bodyWidth.toFixed(1)}" height="${bodyHeight.toFixed(1)}" fill="${color}"/>`
-  );
-}
-
-// Точечное обновление "живой" свечи + линии цены — без пересборки всего графика.
-// Именно это даёт плавный переход (за счёт CSS transition на .live-el), а не рывок.
-function updateLiveOnly(){
-  const ins = getInstrument(currentId);
+// rebuildChart оставлен как алиас — вызывается при структурных изменениях
+// (новая свеча, смена инструмента, зум, сделки): сбрасывает анимацию и рисует кадр сразу
+function rebuildChart(){
   const s = state[currentId];
-  const candles = s.candles.slice(-visibleCount);
-  if(!candles.length) return;
-  const last = candles[candles.length - 1];
-
-  const rawMin = Math.min(...candles.map(c => c.low));
-  const rawMax = Math.max(...candles.map(c => c.high));
-  if(s.rangeMin === null || rawMin < s.rangeMin || rawMax > s.rangeMax){
-    rebuildChart(); // диапазон вышел за текущую шкалу — нужен полный пересчёт
-    return;
-  }
-
-  const wickEl = els.chart.querySelector('#liveWick');
-  const bodyEl = els.chart.querySelector('#liveBody');
-  const priceLineEl = els.chart.querySelector('#priceLine');
-  if(!wickEl || !bodyEl){ rebuildChart(); return; }
-
-  const w = 1000, h = 560, padX = 10, padY = 30;
-  const min = s.rangeMin, max = s.rangeMax, range = (max - min) || 1;
-  const slot = (w - padX * 2) / candles.length;
-  const bodyWidth = Math.max(2, slot * 0.6);
-  const wickWidth = 1.5;
-  const idx = candles.length - 1;
-  const xCenter = padX + slot * idx + slot / 2;
-  const yFor = price => padY + (h - padY * 2) - ((price - min) / range) * (h - padY * 2);
-
-  const up = last.close >= last.open;
-  const color = up ? '#17C787' : '#F1495B';
-  const yHigh = yFor(last.high), yLow = yFor(last.low);
-  const yOpen = yFor(last.open), yClose = yFor(last.close);
-  const bodyTop = Math.min(yOpen, yClose);
-  const bodyHeight = Math.max(1.5, Math.abs(yClose - yOpen));
-
-  wickEl.setAttribute('x', (xCenter - wickWidth/2).toFixed(1));
-  wickEl.setAttribute('y', yHigh.toFixed(1));
-  wickEl.setAttribute('height', Math.max(1, yLow - yHigh).toFixed(1));
-  wickEl.setAttribute('fill', color);
-
-  bodyEl.setAttribute('x', (xCenter - bodyWidth/2).toFixed(1));
-  bodyEl.setAttribute('y', bodyTop.toFixed(1));
-  bodyEl.setAttribute('width', bodyWidth.toFixed(1));
-  bodyEl.setAttribute('height', bodyHeight.toFixed(1));
-  bodyEl.setAttribute('fill', color);
-
-  if(priceLineEl && s.currentPrice !== null){
-    const y = yFor(s.currentPrice);
-    priceLineEl.setAttribute('y', (y - 0.5).toFixed(1));
-  }
+  s.displayLive = null;
+  s.displayPrice = s.currentPrice;
+  if(animId){ cancelAnimationFrame(animId); animId = null; }
+  drawFrame();
 }
 
 // ---------- Цены: живой BTC + симуляция OTC ----------
@@ -530,16 +524,19 @@ function pushPrice(id, price){
   const now = Date.now();
   s.prevPrice = s.currentPrice;
   s.currentPrice = price;
+  const last = s.candles[s.candles.length - 1];
   const isNewCandle = updateCandle(id, now, price);
+  const updatedLast = s.candles[s.candles.length - 1];
 
   settleDueTrades(id, now);
 
   if(id === currentId){
     renderOhlc();
     if(isNewCandle){
-      rebuildChart(); // началась новая свеча — структурное изменение, полная перерисовка
+      rebuildChart(); // началась новая свеча — структурное изменение, сразу рисуем без анимации
     }else{
-      updateLiveOnly(); // тот же интервал — только плавно двигаем текущую свечу и линию цены
+      // тот же интервал (5с) — плавно ведём свечу и линию цены к новому значению за время до следующего тика
+      animateLiveTo(id, updatedLast, price, 1900);
     }
   }
 }
@@ -701,6 +698,8 @@ renderBalance();
 renderOpenTab();
 renderClosedTab();
 updatePayoutPreview();
+resizeCanvas();
+renderOhlc();
 </script>
 </body>
 </html>
