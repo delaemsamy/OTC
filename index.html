@@ -100,6 +100,11 @@ svg#chart{width:100%; height:100%; display:block;}
 .zoom-btn:disabled{opacity:0.3; cursor:default;}
 .zoom-btn:disabled:hover{border-color:var(--border); color:var(--text);}
 
+/* Плавность: только "живая" (текущая) свеча и линия цены анимируются переходом
+   при каждом обновлении атрибутов — закрытые свечи статичны и не анимируются */
+.live-el{ transition: y 0.35s ease-out, height 0.35s ease-out, x 0.35s ease-out, width 0.35s ease-out, fill 0.3s ease-out; }
+
+
 /* ---------- SIDEBAR ---------- */
 .sidebar{
   width:300px; flex-shrink:0; background:var(--panel); border-left:1px solid var(--border);
@@ -341,7 +346,7 @@ function switchInstrument(id){
   els.pairBadge.textContent = ins.type === 'live' ? 'LIVE' : 'OTC';
   els.pairBadge.className = 'badge ' + ins.type;
   renderDropdown();
-  renderCandles();
+  rebuildChart();
   renderOhlc();
 }
 
@@ -350,15 +355,18 @@ function updateCandle(id, time, price){
   const s = state[id];
   const bucket = Math.floor(time / CANDLE_INTERVAL) * CANDLE_INTERVAL;
   let last = s.candles[s.candles.length - 1];
+  let isNew = false;
   if(!last || last.time !== bucket){
     last = { time: bucket, open: price, high: price, low: price, close: price };
     s.candles.push(last);
     if(s.candles.length > MAX_CANDLES) s.candles.shift();
+    isNew = true;
   }else{
     last.high = Math.max(last.high, price);
     last.low = Math.min(last.low, price);
     last.close = price;
   }
+  return isNew;
 }
 
 function renderOhlc(){
@@ -371,8 +379,7 @@ function renderOhlc(){
     `Максимум: <b>${fmtPrice(last.high, ins)}</b> · Минимум: <b>${fmtPrice(last.low, ins)}</b>`;
 }
 
-function renderCandles(){
-  const ins = getInstrument(currentId);
+function rebuildChart(){
   const s = state[currentId];
   const candles = s.candles.slice(-visibleCount);
   if(!candles.length){ els.chart.innerHTML = ''; return; }
@@ -395,10 +402,12 @@ function renderCandles(){
 
   const slot = (w - padX * 2) / candles.length;
   const bodyWidth = Math.max(2, slot * 0.6);
+  const wickWidth = 1.5;
   const yFor = price => padY + (h - padY * 2) - ((price - min) / range) * (h - padY * 2);
 
   let svg = '';
 
+  // пунктирные линии — точки входа в открытые сделки
   openTrades.filter(t => t.instrumentId === currentId).forEach(t => {
     const bucket = Math.floor(t.startTime / CANDLE_INTERVAL) * CANDLE_INTERVAL;
     const idx = candles.findIndex(c => c.time === bucket);
@@ -408,25 +417,92 @@ function renderCandles(){
     }
   });
 
-  candles.forEach((c, i) => {
-    const xCenter = padX + slot * i + slot / 2;
-    const up = c.close >= c.open;
-    const color = up ? '#17C787' : '#F1495B';
-    const yHigh = yFor(c.high), yLow = yFor(c.low);
-    const yOpen = yFor(c.open), yClose = yFor(c.close);
-    const bodyTop = Math.min(yOpen, yClose);
-    const bodyHeight = Math.max(1.5, Math.abs(yClose - yOpen));
-    svg +=
-      `<line x1="${xCenter.toFixed(1)}" y1="${yHigh.toFixed(1)}" x2="${xCenter.toFixed(1)}" y2="${yLow.toFixed(1)}" stroke="${color}" stroke-width="1"/>` +
-      `<rect x="${(xCenter - bodyWidth/2).toFixed(1)}" y="${bodyTop.toFixed(1)}" width="${bodyWidth.toFixed(1)}" height="${bodyHeight.toFixed(1)}" fill="${color}"/>`;
+  // все свечи, кроме последней — статичные, без анимации (они уже закрыты и не меняются)
+  candles.slice(0, -1).forEach((c, i) => {
+    svg += candleSvg(c, padX + slot * i + slot / 2, bodyWidth, wickWidth, yFor, '', '');
   });
 
+  // последняя свеча — "живая", помечена id/классом для точечных плавных обновлений
+  const lastIdx = candles.length - 1;
+  const lastCandle = candles[lastIdx];
+  svg += candleSvg(lastCandle, padX + slot * lastIdx + slot / 2, bodyWidth, wickWidth, yFor, 'liveWick', 'liveBody');
+
+  // линия текущей цены — тоже "живая", рисуем тонким прямоугольником (у line нет CSS-transition на x1/y1)
   if(s.currentPrice !== null){
     const y = yFor(s.currentPrice);
-    svg += `<line x1="0" y1="${y.toFixed(1)}" x2="${w}" y2="${y.toFixed(1)}" stroke="#7C8AA3" stroke-width="1" stroke-dasharray="3 5" opacity="0.5"/>`;
+    svg += `<rect id="priceLine" class="live-el" x="0" y="${(y-0.5).toFixed(1)}" width="${w}" height="1" fill="#7C8AA3" opacity="0.5"/>`;
   }
 
   els.chart.innerHTML = svg;
+}
+
+function candleSvg(c, xCenter, bodyWidth, wickWidth, yFor, wickId, bodyId){
+  const up = c.close >= c.open;
+  const color = up ? '#17C787' : '#F1495B';
+  const yHigh = yFor(c.high), yLow = yFor(c.low);
+  const yOpen = yFor(c.open), yClose = yFor(c.close);
+  const bodyTop = Math.min(yOpen, yClose);
+  const bodyHeight = Math.max(1.5, Math.abs(yClose - yOpen));
+  const wickIdAttr = wickId ? ` id="${wickId}" class="live-el"` : '';
+  const bodyIdAttr = bodyId ? ` id="${bodyId}" class="live-el"` : '';
+  return (
+    `<rect${wickIdAttr} x="${(xCenter - wickWidth/2).toFixed(1)}" y="${yHigh.toFixed(1)}" width="${wickWidth}" height="${Math.max(1, yLow - yHigh).toFixed(1)}" fill="${color}"/>` +
+    `<rect${bodyIdAttr} x="${(xCenter - bodyWidth/2).toFixed(1)}" y="${bodyTop.toFixed(1)}" width="${bodyWidth.toFixed(1)}" height="${bodyHeight.toFixed(1)}" fill="${color}"/>`
+  );
+}
+
+// Точечное обновление "живой" свечи + линии цены — без пересборки всего графика.
+// Именно это даёт плавный переход (за счёт CSS transition на .live-el), а не рывок.
+function updateLiveOnly(){
+  const ins = getInstrument(currentId);
+  const s = state[currentId];
+  const candles = s.candles.slice(-visibleCount);
+  if(!candles.length) return;
+  const last = candles[candles.length - 1];
+
+  const rawMin = Math.min(...candles.map(c => c.low));
+  const rawMax = Math.max(...candles.map(c => c.high));
+  if(s.rangeMin === null || rawMin < s.rangeMin || rawMax > s.rangeMax){
+    rebuildChart(); // диапазон вышел за текущую шкалу — нужен полный пересчёт
+    return;
+  }
+
+  const wickEl = els.chart.querySelector('#liveWick');
+  const bodyEl = els.chart.querySelector('#liveBody');
+  const priceLineEl = els.chart.querySelector('#priceLine');
+  if(!wickEl || !bodyEl){ rebuildChart(); return; }
+
+  const w = 1000, h = 560, padX = 10, padY = 30;
+  const min = s.rangeMin, max = s.rangeMax, range = (max - min) || 1;
+  const slot = (w - padX * 2) / candles.length;
+  const bodyWidth = Math.max(2, slot * 0.6);
+  const wickWidth = 1.5;
+  const idx = candles.length - 1;
+  const xCenter = padX + slot * idx + slot / 2;
+  const yFor = price => padY + (h - padY * 2) - ((price - min) / range) * (h - padY * 2);
+
+  const up = last.close >= last.open;
+  const color = up ? '#17C787' : '#F1495B';
+  const yHigh = yFor(last.high), yLow = yFor(last.low);
+  const yOpen = yFor(last.open), yClose = yFor(last.close);
+  const bodyTop = Math.min(yOpen, yClose);
+  const bodyHeight = Math.max(1.5, Math.abs(yClose - yOpen));
+
+  wickEl.setAttribute('x', (xCenter - wickWidth/2).toFixed(1));
+  wickEl.setAttribute('y', yHigh.toFixed(1));
+  wickEl.setAttribute('height', Math.max(1, yLow - yHigh).toFixed(1));
+  wickEl.setAttribute('fill', color);
+
+  bodyEl.setAttribute('x', (xCenter - bodyWidth/2).toFixed(1));
+  bodyEl.setAttribute('y', bodyTop.toFixed(1));
+  bodyEl.setAttribute('width', bodyWidth.toFixed(1));
+  bodyEl.setAttribute('height', bodyHeight.toFixed(1));
+  bodyEl.setAttribute('fill', color);
+
+  if(priceLineEl && s.currentPrice !== null){
+    const y = yFor(s.currentPrice);
+    priceLineEl.setAttribute('y', (y - 0.5).toFixed(1));
+  }
 }
 
 // ---------- Цены: живой BTC + симуляция OTC ----------
@@ -454,13 +530,17 @@ function pushPrice(id, price){
   const now = Date.now();
   s.prevPrice = s.currentPrice;
   s.currentPrice = price;
-  updateCandle(id, now, price);
+  const isNewCandle = updateCandle(id, now, price);
 
   settleDueTrades(id, now);
 
   if(id === currentId){
-    renderCandles();
     renderOhlc();
+    if(isNewCandle){
+      rebuildChart(); // началась новая свеча — структурное изменение, полная перерисовка
+    }else{
+      updateLiveOnly(); // тот же интервал — только плавно двигаем текущую свечу и линию цены
+    }
   }
 }
 setInterval(() => { pollLivePrice(); tickOtcPrices(); }, 2000);
@@ -507,7 +587,7 @@ function openTrade(direction){
   balance -= stake;
   renderBalance();
   saveState();
-  renderCandles();
+  rebuildChart();
   renderOpenTab();
 }
 
@@ -518,7 +598,7 @@ function settleDueTrades(instrumentId, now){
   openTrades = openTrades.filter(t => !due.includes(t));
   renderOpenTab();
   renderClosedTab();
-  if(instrumentId === currentId) renderCandles();
+  if(instrumentId === currentId) rebuildChart();
 }
 
 function settleTrade(t){
@@ -583,7 +663,7 @@ function applyZoom(delta){
   els.zoomOut.disabled = visibleCount >= MAX_VISIBLE;
   state[currentId].rangeMin = null;
   state[currentId].rangeMax = null;
-  renderCandles();
+  rebuildChart();
 }
 els.zoomIn.addEventListener('click', () => applyZoom(-5));   // меньше свечей = крупнее
 els.zoomOut.addEventListener('click', () => applyZoom(5));   // больше свечей = мельче
@@ -613,7 +693,7 @@ els.resetBtn.addEventListener('click', () => {
   renderBalance();
   renderOpenTab();
   renderClosedTab();
-  renderCandles();
+  rebuildChart();
 });
 
 renderDropdown();
