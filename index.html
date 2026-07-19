@@ -264,7 +264,7 @@ const INSTRUMENTS = [
 let currentId = INSTRUMENTS[0].id;
 const state = {};
 INSTRUMENTS.forEach(ins => {
-  state[ins.id] = { candles: [], currentPrice: ins.type === 'otc' ? ins.base : null, prevPrice: null };
+  state[ins.id] = { candles: [], currentPrice: ins.type === 'otc' ? ins.base : null, prevPrice: null, rangeMin: null, rangeMax: null };
 });
 
 let balance = parseFloat(localStorage.getItem(STORAGE_BALANCE)) || 10000;
@@ -335,6 +335,8 @@ document.addEventListener('click', closeDropdown);
 function switchInstrument(id){
   currentId = id;
   const ins = getInstrument(id);
+  state[id].rangeMin = null;
+  state[id].rangeMax = null;
   els.pairLabel.textContent = ins.label;
   els.pairBadge.textContent = ins.type === 'live' ? 'LIVE' : 'OTC';
   els.pairBadge.className = 'badge ' + ins.type;
@@ -377,8 +379,19 @@ function renderCandles(){
 
   const w = 1000, h = 560, padX = 10, padY = 30;
   const highs = candles.map(c => c.high), lows = candles.map(c => c.low);
-  const min = Math.min(...lows), max = Math.max(...highs);
-  const range = (max - min) || (min * 0.001) || 1;
+  const rawMin = Math.min(...lows), rawMax = Math.max(...highs);
+
+  // Границы шкалы пересчитываем только когда цена реально выходит за текущий
+  // диапазон — так шкала не "прыгает" на каждом мелком колебании цены.
+  if(s.rangeMin === null || rawMin < s.rangeMin || rawMax > s.rangeMax){
+    const rawRange = (rawMax - rawMin) || (rawMax * 0.002) || 0.0001;
+    const pad = rawRange * 0.18;
+    s.rangeMin = rawMin - pad;
+    s.rangeMax = rawMax + pad;
+  }
+
+  const min = s.rangeMin, max = s.rangeMax;
+  const range = (max - min) || 1;
 
   const slot = (w - padX * 2) / candles.length;
   const bodyWidth = Math.max(2, slot * 0.6);
@@ -568,6 +581,8 @@ function applyZoom(delta){
   visibleCount = Math.min(MAX_VISIBLE, Math.max(MIN_VISIBLE, visibleCount + delta));
   els.zoomIn.disabled = visibleCount <= MIN_VISIBLE;
   els.zoomOut.disabled = visibleCount >= MAX_VISIBLE;
+  state[currentId].rangeMin = null;
+  state[currentId].rangeMax = null;
   renderCandles();
 }
 els.zoomIn.addEventListener('click', () => applyZoom(-5));   // меньше свечей = крупнее
