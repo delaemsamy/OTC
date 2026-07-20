@@ -733,6 +733,143 @@
         .phone-input-group { display: flex; gap: 12px; align-items: center; background: #0a0c12; border-radius: 16px; padding: 8px 16px; margin: 16px 0; border: 1px solid #2a2f3e; }
         .phone-code { font-weight: 700; color: #00e676; }
         .phone-number { flex: 1; background: transparent; border: none; color: white; font-size: 16px; outline: none; }
+
+        /* ========== АДАПТАЦИЯ ПОД МОБИЛЬНЫЕ ТЕЛЕФОНЫ ========== */
+        @media (max-width: 768px) {
+            html, body {
+                height: auto;
+                min-height: 100vh;
+                overflow-x: hidden;
+                overflow-y: auto;
+            }
+
+            /* Модалка авторизации */
+            .auth-card {
+                padding: 28px 20px;
+                border-radius: 24px;
+                width: 100%;
+            }
+            .auth-logo { font-size: 28px; }
+            .auth-input { padding: 13px 16px; font-size: 16px; }
+
+            /* Верхняя панель */
+            .top-bar {
+                flex-wrap: wrap;
+                height: auto;
+                padding: 10px 12px;
+                gap: 8px;
+            }
+            .logo { font-size: 18px; }
+            .balance-panel {
+                order: 3;
+                width: 100%;
+                padding: 6px 10px;
+                gap: 10px;
+                justify-content: space-between;
+                flex-wrap: wrap;
+            }
+            .balance-item { font-size: 11px; gap: 5px; }
+            .balance-amount { font-size: 15px; }
+            .account-switch { margin-left: 0; gap: 6px; }
+            .account-btn { padding: 5px 10px; font-size: 11px; }
+            .profile-section { gap: 8px; }
+            .profile-name { display: none; }
+            .profile-trigger { padding: 4px; gap: 6px; }
+            .avatar { width: 30px; height: 30px; font-size: 12px; }
+            .notification-btn { width: 34px; height: 34px; font-size: 15px; }
+            .dropdown-menu { right: 0; left: auto; width: 260px; max-width: 80vw; }
+
+            /* Основной макет: панели друг под другом вместо колонок */
+            .app-container {
+                flex-direction: column;
+                height: auto;
+                overflow: visible;
+            }
+
+            /* Сначала график — самое важное */
+            .chart-panel { order: 1; width: 100%; }
+
+            /* Затем список активов — компактный, со скроллом */
+            .assets-panel {
+                order: 2;
+                width: 100%;
+                max-height: 180px;
+                border-right: none;
+                border-bottom: 1px solid #1e222d;
+            }
+            .assets-header { padding: 12px 16px; }
+            .category-title { padding: 10px 16px 6px; }
+            .asset-row { padding: 10px 16px; }
+
+            /* Затем панель торговли */
+            .trade-panel {
+                order: 3;
+                width: 100%;
+                border-left: none;
+                border-top: 1px solid #1e222d;
+            }
+
+            .chart-header {
+                padding: 10px 14px;
+                flex-wrap: wrap;
+                gap: 10px;
+            }
+            .current-price { font-size: 24px; }
+            .timeframe-group { padding: 3px; }
+            .tf-btn { padding: 5px 12px; font-size: 11px; }
+
+            .chart-container {
+                padding: 12px;
+                height: 320px;
+            }
+
+            .price-timeline {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 8px;
+                padding: 10px 14px;
+            }
+            .timeline-item { justify-content: space-between; }
+
+            .trade-content { padding: 14px; }
+            .trade-amount-input { font-size: 20px; }
+            .trade-buttons { flex-direction: row; gap: 10px; }
+            .btn-call, .btn-put { padding: 16px 8px; font-size: 14px; }
+
+            .history-section { max-height: 200px; }
+
+            .modal-content {
+                width: 92%;
+                max-width: 92%;
+                padding: 24px 18px;
+                border-radius: 20px;
+            }
+
+            .active-trade-indicator {
+                top: 10px;
+                right: 10px;
+                font-size: 11px;
+                padding: 6px 12px;
+            }
+
+            .toast-notification {
+                left: 12px;
+                right: 12px;
+                bottom: 12px;
+                font-size: 12px;
+            }
+        }
+
+        @media (max-width: 420px) {
+            .logo { font-size: 16px; }
+            .balance-item { font-size: 10px; }
+            .balance-amount { font-size: 13px; }
+            .account-btn { padding: 4px 8px; font-size: 10px; }
+            .preset-buttons { gap: 6px; }
+            .preset { padding: 5px 10px; font-size: 12px; }
+            .current-price { font-size: 20px; }
+            .chart-container { height: 260px; }
+        }
     </style>
 </head>
 <body>
